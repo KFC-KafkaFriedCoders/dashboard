@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Container, Grid, Typography, Alert, Snackbar, Box, Card, Switch } from '@mui/material';
-import { Storage, Memory, CompareArrows, DataObject, TerminalIcon, ListAltIcon, ClearAllIcon, ErrorIcon, WarningIcon, InfoIcon, DoneAllIcon, BugReportIcon, CheckCircleOutlineIcon } from '@mui/icons-material';
+import React, { useState, useEffect } from 'react';
+import { Container, Grid, Typography, Alert, Snackbar, Box, } from '@mui/material';
+import { Storage, Memory, CompareArrows, DataObject, } from '@mui/icons-material';
 import { NightContainer, themeColors } from './NightThemeProvider';
 import MetricCard from './MetricCard';
+import axios from 'axios';
+
 import { 
   ErrorLogsPanel, 
   TopicDataStreamPanel, 
   KafkaMonitoringPanel, 
   EmergencyModeDisplay,
-  DashboardFooter
 } from './MetricComponents';
 import { 
   getClusterState, 
@@ -16,377 +17,188 @@ import {
   toggleBroker, 
   toggleController, 
   toggleConnector, 
-  toggleSchemaRegistry,
-  generateTopicData,
-  generateErrorLog
+  toggleSchemaRegistry
 } from '../services/kafkaService';
 
-function NightSystemMonitor() {
-  const [clusterState, setClusterState] = useState({
-    brokers: [
-      { id: 1, status: 'active', health: 100 },
-      { id: 2, status: 'active', health: 100 },
-      { id: 3, status: 'active', health: 100 }
-    ],
-    controllers: [
-      { id: 1, status: 'active', isLeader: true },
-      { id: 2, status: 'active', isLeader: false },
-      { id: 3, status: 'active', isLeader: false }
-    ],
-    connectors: [
-      { id: 1, name: 'mysql-sink', status: 'active', type: 'sink' },
-      { id: 2, name: 'stream-processor', status: 'active', type: 'processor' }
-    ],
-    schemaRegistry: [
-      { id: 1, status: 'active', mode: 'primary' },
-      { id: 2, status: 'active', mode: 'backup' }
-    ]
-  });
+// 초기 상태
+const INITIAL_STATE = {
+  brokers: Array(3).fill().map((_, i) => ({ id: i + 1, status: 'inactive', health: 0 })),
+  controllers: Array(3).fill().map((_, i) => ({ id: i + 1, status: 'inactive', health: 0 })),
+  connectors: Array(2).fill().map((_, i) => ({ id: i + 1, status: 'inactive', health: 0 })),
+  schemaRegistries: Array(2).fill().map((_, i) => ({ id: i + 1, status: 'inactive', health: 0 }))
+};
 
+function NightSystemMonitor() {
+  const [clusterState, setClusterState] = useState(INITIAL_STATE);
   const [alerts, setAlerts] = useState([]);
   const [errorLogs, setErrorLogs] = useState([]);
   const [hasErrors, setHasErrors] = useState(false);
   const [hasWarnings, setHasWarnings] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
-  const [brokerActive, setBrokerActive] = useState(true);
   const [isEmergency, setIsEmergency] = useState(false);
-  const [showEmergencyBanner, setShowEmergencyBanner] = useState(false);
-  const errorLogsRef = useRef(null);
-  const emergencyTimerRef = useRef(null);
-
-  // 토픽 데이터 처리 시각화를 위한 더미 데이터 생성
-  const [topicData, setTopicData] = useState([]);
-  const [lastTimestamp, setLastTimestamp] = useState(Date.now());
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // 시스템 상태를 확인하는 함수
   const checkSystemStatus = (
     brokers = clusterState.brokers,
     controllers = clusterState.controllers,
     connectors = clusterState.connectors,
-    schemaRegistry = clusterState.schemaRegistry
+    schemaRegistries = clusterState.schemaRegistries
   ) => {
     const anyBrokerDown = brokers.some(b => b.status !== 'active');
     const anyControllerDown = controllers.some(c => c.status !== 'active');
     const anyConnectorDown = connectors.some(c => c.status !== 'active');
-    const anySRDown = schemaRegistry.some(s => s.status !== 'active');
+    const anySRDown = schemaRegistries.some(s => s.status !== 'active');
     
-    const shouldBeEmergency = anyBrokerDown || anyControllerDown || anyConnectorDown || anySRDown;
-    setIsEmergency(shouldBeEmergency);
+    setIsEmergency(anyBrokerDown || anyControllerDown || anyConnectorDown || anySRDown);
+  };
 
-    // 비상 모드가 활성화되면 배너 표시
-    if (shouldBeEmergency && !showEmergencyBanner) {
-      setShowEmergencyBanner(true);
+  // 클러스터 데이터 로드
+  const loadClusterData = async () => {
+    try {
+      const [state, alertsData] = await Promise.all([
+        getClusterState(),
+        getClusterAlerts()
+      ]);
       
-      // 4초 후 배너 숨기기
-      clearTimeout(emergencyTimerRef.current);
-      emergencyTimerRef.current = setTimeout(() => {
-        setShowEmergencyBanner(false);
-      }, 4000);
-    } else if (!shouldBeEmergency) {
-      setShowEmergencyBanner(false);
-      clearTimeout(emergencyTimerRef.current);
+      setClusterState(state);
+      setAlerts(alertsData);
+      
+      const hasError = alertsData.some(alert => alert.type === 'error');
+      const hasWarning = alertsData.some(alert => alert.type === 'warning');
+      
+      setHasErrors(hasError);
+      setHasWarnings(hasWarning);
+      
+      checkSystemStatus(state.brokers, state.controllers, state.connectors, state.schemaRegistries);
+    } catch (error) {
+      console.error('클러스터 데이터 로드 중 오류 발생:', error);
+      setSnackbar({
+        open: true,
+        message: '클러스터 데이터를 불러오는 중 오류가 발생했습니다.',
+        severity: 'error'
+      });
+      setClusterState(INITIAL_STATE);
     }
-    
-    setBrokerActive(!anyBrokerDown);
   };
 
   useEffect(() => {
-    // 컴포넌트 마운트 시 클러스터 상태 및 알림 정보 조회
-    const loadClusterData = async () => {
+    const getII = async () => {
       try {
-        const clusterData = await getClusterState();
-        setClusterState(clusterData);
-        
-        const alertsData = await getClusterAlerts();
-        if (alertsData.length > 0) {
-          setAlerts(alertsData);
-        }
+        const response = await axios.get("http://localhost:9090/api/v1/query?query=kafka_server_brokertopicmetrics_messagesinpersec")
+        const metricsData = response.data.data.result
+        console.log(metricsData.length);
       } catch (error) {
-        console.error('클러스터 데이터 로드 중 오류 발생:', error);
+        console.log(error)
       }
-    };
-
-    loadClusterData();
-    
-    // 샘플 에러 로그 데이터 생성
-    setErrorLogs([
-      {
-        id: 1,
-        timestamp: new Date().toLocaleTimeString(),
-        level: 'ERROR',
-        source: 'broker-1',
-        message: 'Connection refused to zookeeper instance at 10.0.1.5:2181'
-      },
-      {
-        id: 2,
-        timestamp: new Date(Date.now() - 60000).toLocaleTimeString(),
-        level: 'WARN',
-        source: 'connector-mysql',
-        message: 'Slow query execution detected, took 4.3s to complete'
-      },
-      {
-        id: 3,
-        timestamp: new Date(Date.now() - 120000).toLocaleTimeString(),
-        level: 'ERROR',
-        source: 'schema-registry',
-        message: 'Failed to serialize schema for topic payment-events'
-      }
-    ]);
-  }, []);
-
-  // 새 에러 로그를 주기적으로 추가하는 모의 기능
-  useEffect(() => {
-    if (isEmergency) {
-      const interval = setInterval(() => {
-        const newErrorLog = generateErrorLog();
-        setErrorLogs(prev => [newErrorLog, ...prev.slice(0, 50)]);
-      }, 4000);
-      
-      return () => clearInterval(interval);
     }
-  }, [isEmergency]);
+    getII();
+  })
 
+  // 주기적인 데이터 갱신
   useEffect(() => {
-    // 모든 컴포넌트의 상태를 확인하여 비상 모드 결정
-    checkSystemStatus(
-      clusterState.brokers,
-      clusterState.controllers,
-      clusterState.connectors,
-      clusterState.schemaRegistry
-    );
-  }, [clusterState]);
-
-  useEffect(() => {
-    // 토픽 처리량 데이터 생성
-    const interval = setInterval(() => {
-      const newData = generateTopicData();
-      setTopicData(prev => [newData, ...prev.slice(0, 49)]);
-      setLastTimestamp(Date.now());
-    }, 1000);
+    
+    loadClusterData();
+    const interval = setInterval(loadClusterData, 30000); // 30초마다 갱신
     
     return () => clearInterval(interval);
   }, []);
 
+  // 상태 변경 시 시스템 상태 확인
   useEffect(() => {
-    setHasErrors(alerts.some(alert => alert.severity === 'error'));
-    setHasWarnings(alerts.some(alert => alert.severity === 'warning'));
+    checkSystemStatus();
+  }, [clusterState]);
+
+  // 알림 상태 업데이트
+  useEffect(() => {
+    setHasErrors(alerts.some(alert => alert.type === 'error'));
+    setHasWarnings(alerts.some(alert => alert.type === 'warning'));
   }, [alerts]);
-
-  const toggleBrokerStatus = async (index) => {
-    // 인덱스 유효성 검사
-    if (index < 0 || index >= clusterState.brokers.length) {
-      console.error(`유효하지 않은 브로커 인덱스: ${index}`);
-      setSnackbar({
-        open: true,
-        message: `유효하지 않은 브로커 인덱스: ${index}`,
-        severity: 'error'
-      });
-      return;
-    }
+  
+  // 상태 토글 함수들
+  const toggleStatus = async (type, id, isActive) => {
+    if (isUpdating) return;
     
     try {
-      // 브로커 상태 변경
-      const updatedBrokers = [...clusterState.brokers];
-      const currentStatus = updatedBrokers[index].status;
-      const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+      setIsUpdating(true);
+      let newStatus;
       
-      // 상태 업데이트
-      updatedBrokers[index] = { 
-        ...updatedBrokers[index], 
-        status: newStatus
-      };
+      // 상태 변경 처리
+      switch (type) {
+        case 'broker':
+          newStatus = await toggleBroker(id, !isActive);
+          break;
+        case 'controller':
+          newStatus = await toggleController(id, !isActive);
+          break;
+        case 'connector':
+          newStatus = await toggleConnector(id, !isActive);
+          break;
+        case 'schemaRegistry':
+          newStatus = await toggleSchemaRegistry(id, !isActive);
+          break;
+        default:
+          console.error(`알 수 없는 컴포넌트 타입: ${type}`);
+          throw new Error('알 수 없는 컴포넌트 타입');
+      }
       
-      // 클러스터 상태 업데이트
-      setClusterState(prev => ({
-        ...prev,
-        brokers: updatedBrokers
-      }));
-      
-      // 시스템 상태 확인
-      checkSystemStatus(updatedBrokers);
-      
-      // 알림 추가
-      const brokerId = updatedBrokers[index].id;
-      const newAlert = {
-        id: Date.now(),
-        severity: newStatus === 'active' ? 'success' : 'error',
-        title: `Broker ${brokerId} ${newStatus === 'active' ? 'Started' : 'Stopped'}`,
-        message: `Broker ${brokerId} has been ${newStatus === 'active' ? 'started' : 'stopped'}.`,
-        timestamp: new Date().toLocaleTimeString(),
-        isRead: false
-      };
-      
-      setAlerts(prev => [newAlert, ...prev]);
-      
-    } catch (error) {
-      console.error(`브로커 상태 업데이트 중 오류 발생:`, error);
+      // 메시지 설정: `newStatus`가 `true`이면 활성화되었고, `false`이면 비활성화됨
       setSnackbar({
         open: true,
-        message: `Failed to update broker status: ${error.message}`,
-        severity: 'error'
+        message: `${type.charAt(0).toUpperCase() + type.slice(1)} ${id}가 ${newStatus ? '활성화' : '비활성화'}되었습니다.`,
+        severity: 'success'
       });
-    }
-  };
-
-  const toggleControllerStatus = async (index) => {
-    // 컨트롤러 상태 변경
-    const updatedControllers = [...clusterState.controllers];
-    const currentStatus = updatedControllers[index].status;
-    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-    
-    try {
-      // 상태 업데이트
-      updatedControllers[index] = { 
-        ...updatedControllers[index], 
-        status: newStatus
-      };
       
-      // 클러스터 상태 업데이트
-      setClusterState(prev => ({
-        ...prev,
-        controllers: updatedControllers
-      }));
-      
-      // 알림 추가
-      const controllerId = updatedControllers[index].id;
-      const newAlert = {
-        id: Date.now(),
-        severity: newStatus === 'active' ? 'success' : 'error',
-        title: `Controller ${controllerId} ${newStatus === 'active' ? 'Started' : 'Stopped'}`,
-        message: `Controller ${controllerId} has been ${newStatus === 'active' ? 'started' : 'stopped'}.`,
-        timestamp: new Date().toLocaleTimeString(),
-        isRead: false
-      };
-      
-      setAlerts(prev => [newAlert, ...prev]);
-      
+      // 상태 업데이트 후 전체 데이터 갱신
+      await loadClusterData();
     } catch (error) {
-      console.error(`컨트롤러 상태 업데이트 중 오류 발생:`, error);
+      console.error(`${type} 상태 변경 중 오류 발생:`, error);
       setSnackbar({
         open: true,
-        message: `Failed to update controller status: ${error.message}`,
+        message: `${type.charAt(0).toUpperCase() + type.slice(1)} 상태 변경 중 오류가 발생했습니다.`,
         severity: 'error'
       });
+    } finally {
+      setIsUpdating(false);
     }
-  };
-
-  const toggleConnectorStatus = async (index) => {
-    // 커넥터 상태 변경
-    const updatedConnectors = [...clusterState.connectors];
-    const currentStatus = updatedConnectors[index].status;
-    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-    
-    try {
-      // 상태 업데이트
-      updatedConnectors[index] = { 
-        ...updatedConnectors[index], 
-        status: newStatus
-      };
-      
-      // 클러스터 상태 업데이트
-      setClusterState(prev => ({
-        ...prev,
-        connectors: updatedConnectors
-      }));
-      
-      // 알림 추가
-      const connectorId = updatedConnectors[index].id;
-      const connectorName = updatedConnectors[index].name;
-      const newAlert = {
-        id: Date.now(),
-        severity: newStatus === 'active' ? 'success' : 'error',
-        title: `Connector ${connectorName} ${newStatus === 'active' ? 'Started' : 'Stopped'}`,
-        message: `Connector ${connectorName} has been ${newStatus === 'active' ? 'started' : 'stopped'}.`,
-        timestamp: new Date().toLocaleTimeString(),
-        isRead: false
-      };
-      
-      setAlerts(prev => [newAlert, ...prev]);
-      
-    } catch (error) {
-      console.error(`커넥터 상태 업데이트 중 오류 발생:`, error);
-      setSnackbar({
-        open: true,
-        message: `Failed to update connector status: ${error.message}`,
-        severity: 'error'
-      });
-    }
-  };
-
-  const toggleSchemaRegistryStatus = async (index) => {
-    // 스키마 레지스트리 상태 변경
-    const updatedRegistry = [...clusterState.schemaRegistry];
-    const currentStatus = updatedRegistry[index].status;
-    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-    
-    try {
-      // 상태 업데이트
-      updatedRegistry[index] = { 
-        ...updatedRegistry[index], 
-        status: newStatus
-      };
-      
-      // 클러스터 상태 업데이트
-      setClusterState(prev => ({
-        ...prev,
-        schemaRegistry: updatedRegistry
-      }));
-      
-      // 알림 추가
-      const srId = updatedRegistry[index].id;
-      const srMode = updatedRegistry[index].mode;
-      const newAlert = {
-        id: Date.now(),
-        severity: newStatus === 'active' ? 'success' : 'error',
-        title: `Schema Registry ${srId} (${srMode}) ${newStatus === 'active' ? 'Started' : 'Stopped'}`,
-        message: `Schema Registry ${srId} has been ${newStatus === 'active' ? 'started' : 'stopped'}.`,
-        timestamp: new Date().toLocaleTimeString(),
-        isRead: false
-      };
-      
-      setAlerts(prev => [newAlert, ...prev]);
-      
-    } catch (error) {
-      console.error(`스키마 레지스트리 상태 업데이트 중 오류 발생:`, error);
-      setSnackbar({
-        open: true,
-        message: `Failed to update schema registry status: ${error.message}`,
-        severity: 'error'
-      });
-    }
-  };
-
-  const handleCloseSnackbar = () => {
-    setSnackbar({ ...snackbar, open: false });
   };
 
   // 각 항목에 shortName 추가
   const getBrokerItems = () => {
     return clusterState.brokers.map(broker => ({
       ...broker,
-      shortName: `B${broker.id}`
+      shortName: `B${broker.id}`,
+      type: 'broker' // 추가: 타입 정보 설정
     }));
   };
 
   const getControllerItems = () => {
     return clusterState.controllers.map(controller => ({
       ...controller,
-      shortName: `C${controller.id}`
+      shortName: `C${controller.id}`,
+      type: 'controller' // 추가: 타입 정보 설정
     }));
   };
 
   const getConnectorItems = () => {
     return clusterState.connectors.map(connector => ({
       ...connector,
-      shortName: connector.name.substring(0, 4)
+      shortName: `K${connector.id}`,
+      type: 'connector' // 추가: 타입 정보 설정
     }));
   };
 
   const getSchemaRegistryItems = () => {
-    return clusterState.schemaRegistry.map(sr => ({
+    return clusterState.schemaRegistries.map(sr => ({
       ...sr,
-      shortName: `SR${sr.id}`
+      shortName: `SR${sr.id}`,
+      type: 'schemaRegistry' // 추가: 타입 정보 설정
     }));
+  };
+
+  // Snackbar 닫기 함수
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
   };
 
   const Footer = () => {
@@ -404,39 +216,8 @@ function NightSystemMonitor() {
     );
   };
 
-  const BrokerControls = ({ brokers, onToggle }) => {
-    return (
-      <Grid container spacing={2} sx={{ mb: 2 }}>
-        {brokers.map((broker, index) => (
-          <Grid item xs={6} md={3} key={index}>
-            <Card sx={{ 
-              bgcolor: broker.status === 'active' ? 'rgba(35, 166, 97, 0.2)' : 'rgba(255, 82, 82, 0.2)', 
-              p: 1, 
-              borderRadius: 1,
-              border: `1px solid ${broker.status === 'active' ? 'rgba(35, 166, 97, 0.5)' : 'rgba(255, 82, 82, 0.5)'}`,
-              transition: 'all 0.3s ease'
-            }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2">{broker.id}</Typography>
-                <Switch 
-                  size="small"
-                  checked={broker.status === 'active'}
-                  onChange={() => onToggle(index)}
-                  color="success"
-                />
-              </Box>
-              <Typography variant="caption" display="block" sx={{ opacity: 0.7 }}>
-                {broker.status === 'active' ? 'Active' : 'Inactive'}
-              </Typography>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
-    );
-  };
-
   return (
-    <NightContainer isEmergency={isEmergency} showEmergencyBanner={showEmergencyBanner}>
+    <NightContainer isEmergency={isEmergency}>
       <Container maxWidth="xl" sx={{ 
         display: 'flex', 
         flexDirection: 'column', 
@@ -480,20 +261,22 @@ function NightSystemMonitor() {
           <Grid container spacing={3} mb={3}>
             <Grid item xs={12} md={3}>
               <MetricCard
+                type="broker"
                 title="Broker Status"
                 value={`${clusterState.brokers.filter(b => b.status === 'active').length}/3`}
-                trend={brokerActive ? "All Brokers Active" : "Some Brokers Down"}
+                trend={isEmergency ? "Some Brokers Down" : "All Brokers Active"}
                 icon={Storage}
                 color={themeColors.primary}
                 health={clusterState.brokers.filter(b => b.status === 'active').length / clusterState.brokers.length * 100}
-                isAlertActive={!brokerActive}
+                isAlertActive={!isEmergency}
                 isEmergency={isEmergency}
                 items={getBrokerItems()}
-                onItemToggle={toggleBrokerStatus}
+                onItemToggle={toggleStatus}
               />
             </Grid>
             <Grid item xs={12} md={3}>
               <MetricCard
+                type="controller"
                 title="Controller Status"
                 value={`${clusterState.controllers.filter(c => c.status === 'active').length}/3`}
                 trend="Leader Active"
@@ -502,11 +285,12 @@ function NightSystemMonitor() {
                 health={clusterState.controllers.filter(c => c.status === 'active').length / clusterState.controllers.length * 100}
                 isEmergency={isEmergency}
                 items={getControllerItems()}
-                onItemToggle={toggleControllerStatus}
+                onItemToggle={toggleStatus}
               />
             </Grid>
             <Grid item xs={12} md={3}>
               <MetricCard
+                type="connector"
                 title="Connectors"
                 value={`${clusterState.connectors.filter(c => c.status === 'active').length}/2`}
                 trend="Data Flow Status"
@@ -515,20 +299,21 @@ function NightSystemMonitor() {
                 health={clusterState.connectors.filter(c => c.status === 'active').length / clusterState.connectors.length * 100}
                 isEmergency={isEmergency}
                 items={getConnectorItems()}
-                onItemToggle={toggleConnectorStatus}
+                onItemToggle={toggleStatus}
               />
             </Grid>
             <Grid item xs={12} md={3}>
               <MetricCard
+                type="schemaRegistry"
                 title="Schema Registry"
-                value={`${clusterState.schemaRegistry.filter(s => s.status === 'active').length}/2`}
+                value={`${clusterState.schemaRegistries.filter(s => s.status === 'active').length}/2`}
                 trend="Schema Service"
                 icon={DataObject}
                 color={themeColors.primary}
-                health={clusterState.schemaRegistry.filter(s => s.status === 'active').length / clusterState.schemaRegistry.length * 100}
+                health={clusterState.schemaRegistries.filter(s => s.status === 'active').length / clusterState.schemaRegistries.length * 100}
                 isEmergency={isEmergency}
                 items={getSchemaRegistryItems()}
-                onItemToggle={toggleSchemaRegistryStatus}
+                onItemToggle={toggleStatus}
               />
             </Grid>
           </Grid>
@@ -537,16 +322,13 @@ function NightSystemMonitor() {
             <Grid item xs={12} md={4}>
               <ErrorLogsPanel 
                 isEmergency={isEmergency} 
-                errorLogs={errorLogs} 
-                errorLogsRef={errorLogsRef} 
+                clusterState={clusterState}
               />
             </Grid>
 
             <Grid item xs={12} md={4}>
               <TopicDataStreamPanel 
                 isEmergency={isEmergency} 
-                topicData={topicData} 
-                lastTimestamp={lastTimestamp} 
               />
             </Grid>
             
@@ -555,7 +337,6 @@ function NightSystemMonitor() {
                 isEmergency={isEmergency} 
                 hasErrors={hasErrors} 
                 hasWarnings={hasWarnings} 
-                brokerActive={brokerActive} 
               />
             </Grid>
           </Grid>
@@ -589,4 +370,4 @@ function NightSystemMonitor() {
   );
 }
 
-export default NightSystemMonitor; 
+export default NightSystemMonitor;

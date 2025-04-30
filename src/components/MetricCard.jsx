@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Typography, Paper, LinearProgress, Chip, IconButton, Button } from '@mui/material';
+import { Box, Typography, LinearProgress, Button } from '@mui/material';
 import { NightCard, themeColors, styles } from './NightThemeProvider';
 import { PowerSettingsNew } from '@mui/icons-material';
 
@@ -92,7 +92,7 @@ const MetricCard = ({
                   variant="contained"
                   size="small"
                   startIcon={<PowerSettingsNew />}
-                  onClick={() => onItemToggle && onItemToggle(index)}
+                  onClick={() => onItemToggle && onItemToggle(item.type, item.id, item.status === 'active')}
                   sx={{
                     backgroundColor: item.status === 'active' 
                       ? `${color}90`
@@ -124,4 +124,4 @@ const MetricCard = ({
   );
 };
 
-export default MetricCard; 
+export default MetricCard;
