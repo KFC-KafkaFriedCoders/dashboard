@@ -3,7 +3,6 @@ import { Container, Grid, Typography, Alert, Snackbar, Box, } from '@mui/materia
 import { Storage, Memory, CompareArrows, DataObject, } from '@mui/icons-material';
 import { NightContainer, themeColors } from './NightThemeProvider';
 import MetricCard from './MetricCard';
-import axios from 'axios';
 
 import { 
   ErrorLogsPanel, 
@@ -85,7 +84,7 @@ function NightSystemMonitor() {
   useEffect(() => {
     
     loadClusterData();
-    const interval = setInterval(loadClusterData, 30000); // 30초마다 갱신
+    const interval = setInterval(loadClusterData, 10000); // 10초마다 갱신
     
     return () => clearInterval(interval);
   }, []);
@@ -232,10 +231,10 @@ function NightSystemMonitor() {
                   gap: 2,
                   fontFamily: "'Orbitron', sans-serif"
                 }}>
-                  Night System Monitor
+                  Kafka Monitoring System
                 </Typography>
                 <Typography variant="subtitle1" sx={{ color: themeColors.textSecondary, mt: 1 }}>
-                  Real-time distributed system health dashboard
+                  kafka health dashboard
                 </Typography>
               </Grid>
               <Grid item>
@@ -265,7 +264,7 @@ function NightSystemMonitor() {
                 type="controller"
                 title="Controller Status"
                 value={`${clusterState.controllers.filter(c => c.status === 'active').length}/3`}
-                trend="Leader Active"
+                trend="Controller Active"
                 icon={Memory}
                 color={themeColors.success}
                 health={clusterState.controllers.filter(c => c.status === 'active').length / clusterState.controllers.length * 100}
@@ -279,7 +278,7 @@ function NightSystemMonitor() {
                 type="connector"
                 title="Connectors"
                 value={`${clusterState.connectors.filter(c => c.status === 'active').length}/2`}
-                trend="Data Flow Status"
+                trend="Connectors Active"
                 icon={CompareArrows}
                 color={themeColors.warning}
                 health={clusterState.connectors.filter(c => c.status === 'active').length / clusterState.connectors.length * 100}
@@ -293,7 +292,7 @@ function NightSystemMonitor() {
                 type="schemaRegistry"
                 title="Schema Registry"
                 value={`${clusterState.schemaRegistries.filter(s => s.status === 'active').length}/2`}
-                trend="Schema Service"
+                trend="Schema Registry Active"
                 icon={DataObject}
                 color={themeColors.primary}
                 health={clusterState.schemaRegistries.filter(s => s.status === 'active').length / clusterState.schemaRegistries.length * 100}

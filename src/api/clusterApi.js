@@ -4,7 +4,6 @@ const KAFKA_URL = 'http://localhost:8080';
 
 export const startBroker = async (id) => {
     try {
-        console.log("startBroker", id);
         const response = await axios.post(`${KAFKA_URL}/broker/start/${id}`, {});
         return response.data;
     } catch (error) {
@@ -14,7 +13,6 @@ export const startBroker = async (id) => {
 
 export const shutDownBroker = async (id) => {
     try {
-        console.log("shutDownBroker", id);
         const response = await axios.post(`${KAFKA_URL}/broker/shutdown/${id}`, {});
         return response.data;
     } catch (error) {
@@ -24,7 +22,6 @@ export const shutDownBroker = async (id) => {
 
 export const statusBroker = async (id) => {
     try {
-        console.log("statusBroker", id);
         const response = await axios.post(`${KAFKA_URL}/broker/status/${id}`, {});
         return response.data;
     } catch (error) {

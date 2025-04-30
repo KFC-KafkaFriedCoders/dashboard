@@ -3,7 +3,7 @@ import { Box, Typography, Divider, Grid, Card } from '@mui/material';
 import { CompareArrows, NotificationsActive, ErrorOutline } from '@mui/icons-material';
 import { NightCard, themeColors, floatingEffect, pulse } from './NightThemeProvider';
 import axios from 'axios';
-
+// sum(kafka_server_brokertopicmetrics_messagesinpersec) by (topic)
 // 에러 로그 아이템 컴포넌트
 export const ErrorLogItem = ({ log }) => (
   <Box 
@@ -166,23 +166,25 @@ export const ErrorLogsPanel = ({ isEmergency, clusterState }) => {
     </Card>
   );
 };
+
 // 토픽 데이터 스트림 컴포넌트
 export const TopicDataStreamPanel = ({ isEmergency }) => {
+  
   const [topicData, setTopicData] = useState([]);
+
 
   useEffect(() => {
     const fetchTopicData = async () => {
       try {
         const response = await axios.get("http://localhost:9090/api/v1/query?query=kafka_server_brokertopicmetrics_messagesinpersec")
         const metricsData = response.data.data.result
-        console.log("Fetched topic data:", metricsData);
         setTopicData(metricsData);
       } catch (error) {
         console.error('토픽 데이터를 가져오는 중 오류 발생:', error);
       }
     };
     fetchTopicData();
-    setInterval(() => {fetchTopicData();}, 30000);
+    setInterval(() => {fetchTopicData();}, 10000);
     return () => clearInterval(fetchTopicData);
   }, []);
 
@@ -275,102 +277,152 @@ export const TopicDataStreamPanel = ({ isEmergency }) => {
   );
 };
 
-// 카프카 모니터링 컴포넌트
-export const KafkaMonitoringPanel = ({ isEmergency, hasErrors, hasWarnings, brokerActive }) => (
-  <NightCard isEmergency={isEmergency}>
-    <Box display="flex" alignItems="center" mb={2}>
-      <NotificationsActive className={hasErrors || !brokerActive ? 'emergency-icon' : ''} sx={{ 
-        color: hasErrors || !brokerActive ? themeColors.error : 
-               hasWarnings ? themeColors.warning : themeColors.primary,
-        mr: 1,
-        animation: hasErrors || !brokerActive ? 
-                  `${floatingEffect} 2s infinite ease-in-out` : 
-                  `${floatingEffect} 3s infinite ease-in-out`,
-        filter: hasErrors || !brokerActive ? 'drop-shadow(0 0 8px rgba(255, 82, 82, 0.6))' : 'none'
-      }} />
-      <Typography variant="h6" sx={{ 
-        fontWeight: '600', 
-        color: hasErrors || !brokerActive ? themeColors.error : themeColors.text
-      }}>
-        Kafka Monitoring
-      </Typography>
-    </Box>
-    <Divider sx={{ borderColor: isEmergency ? 'rgba(255, 82, 82, 0.2)' : 'rgba(255, 143, 171, 0.1)', mb: 2 }} />
-    <Box sx={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(2, 1fr)',
-      gap: 2,
-      height: '250px',
-      overflowY: 'auto'
-    }}>
-      <Box sx={{
-        backgroundColor: `${themeColors.cardBg}90`,
-        borderRadius: '8px',
-        padding: 2
-      }}>
-        <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
-          서비스 가용성
-        </Typography>
-        <Typography variant="h5" sx={{ color: themeColors.success, fontWeight: 'bold' }}>
-          99.999%
-        </Typography>
-        <Typography variant="caption" sx={{ color: themeColors.textSecondary }}>
-          무중단 서비스 시간: 143일
-        </Typography>
-      </Box>
-      
-      <Box sx={{
-        backgroundColor: `${themeColors.cardBg}90`,
-        borderRadius: '8px',
-        padding: 2
-      }}>
-        <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
-          처리량
-        </Typography>
-        <Typography variant="h5" sx={{ color: themeColors.warning, fontWeight: 'bold' }}>
-          8.2K/s
-        </Typography>
-        <Typography variant="caption" sx={{ color: themeColors.textSecondary }}>
-          최대: 12.5K/s
-        </Typography>
-      </Box>
-      
-      <Box sx={{
-        backgroundColor: `${themeColors.cardBg}90`,
-        borderRadius: '8px',
-        padding: 2
-      }}>
-        <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
-          레이턴시
-        </Typography>
-        <Typography variant="h5" sx={{ color: themeColors.primary, fontWeight: 'bold' }}>
-          2.3ms
-        </Typography>
-        <Typography variant="caption" sx={{ color: themeColors.textSecondary }}>
-          P99: 5.1ms
-        </Typography>
-      </Box>
-      
-      <Box sx={{
-        backgroundColor: `${themeColors.cardBg}90`,
-        borderRadius: '8px',
-        padding: 2
-      }}>
-        <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
-          컨슈머 랙
-        </Typography>
-        <Typography variant="h5" sx={{ color: themeColors.success, fontWeight: 'bold' }}>
-          0.05s
-        </Typography>
-        <Typography variant="caption" sx={{ color: themeColors.textSecondary }}>
-          복제 지연: 0ms
-        </Typography>
-      </Box>
-    </Box>
-  </NightCard>
-);
+export const KafkaMonitoringPanel = ({ isEmergency, hasErrors, hasWarnings, brokerActive }) => {
+  
+  const [logSize, setLogSize] = useState([])
+  const [partitionData, setPartitionData] = useState([]);
+  const [sum, setSum] = useState(0);
 
-// 비상 모드 표시 컴포넌트
+  useEffect(() => {
+    const fetchTopicData = async () => {
+      try {
+        const response = await axios.get("http://localhost:9090/api/v1/query?query=kafka_server_replicamanager_partitioncount");
+        setPartitionData(response.data.data.result);
+      } catch (error) {
+        console.error('토픽 데이터를 가져오는 중 오류 발생:', error);
+      }
+    };
+    const fetchLogSize = async () => {
+      try {
+        const response = await axios.get(
+          'http://localhost:9090/api/v1/query',
+          {
+            params: {
+              query: 'sum(kafka_log_log_size{job="kafka-broker"}) by (instance)'
+            }
+          }
+        );
+        setLogSize(response);
+      } catch (error) {
+        console.log('error / 로그 사이즈 수집');
+      }
+    }
+    fetchLogSize();
+    fetchTopicData();
+    const intervalId = setInterval(fetchTopicData, 10000);
+
+    return () => clearInterval(intervalId);
+  }, []);
+
+  const getAllPartition = () => {
+    setSum(0);
+    if(partitionData.length > 0){
+      for(let i = 0; i < partitionData.length; i++){
+        setSum(prevSum => prevSum + parseInt(partitionData[i].value[1]));
+      }
+    }
+
+  }
+  useEffect(() => {
+    getAllPartition();
+  },[partitionData]);
+
+  return (
+    <NightCard isEmergency={isEmergency}>
+      <Box display="flex" alignItems="center" mb={2}>
+        <NotificationsActive
+          className={hasErrors || !brokerActive ? 'emergency-icon' : ''}
+          sx={{
+            color: hasErrors || !brokerActive
+              ? themeColors.error
+              : hasWarnings
+              ? themeColors.warning
+              : themeColors.primary,
+            mr: 1,
+            animation: hasErrors || !brokerActive
+              ? `${floatingEffect} 2s infinite ease-in-out`
+              : `${floatingEffect} 3s infinite ease-in-out`,
+            filter: hasErrors || !brokerActive
+              ? 'drop-shadow(0 0 8px rgba(255, 82, 82, 0.6))'
+              : 'none'
+          }}
+        />
+        <Typography
+          variant="h6"
+          sx={{
+            fontWeight: '600',
+            color: hasErrors || !brokerActive ? themeColors.error : themeColors.text
+          }}
+        >
+          Kafka Monitoring
+        </Typography>
+      </Box>
+      <Divider
+        sx={{
+          borderColor: isEmergency
+            ? 'rgba(255, 82, 82, 0.2)'
+            : 'rgba(255, 143, 171, 0.1)',
+          mb: 2
+        }}
+      />
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: 2,
+          height: '250px',
+          overflowY: 'auto'
+        }}
+      >
+        <Box sx={{ backgroundColor: `${themeColors.cardBg}90`, borderRadius: '8px', padding: 2 }}>
+          <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
+            All Partitions
+          </Typography>
+          <Typography variant="h5" sx={{ color: themeColors.success, fontWeight: 'bold' }}>
+            {sum}
+          </Typography>
+        </Box>
+
+        <Box sx={{ backgroundColor: `${themeColors.cardBg}90`, borderRadius: '8px', padding: 2 }}>
+          <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
+            처리량
+          </Typography>
+          <Typography variant="h5" sx={{ color: themeColors.warning, fontWeight: 'bold' }}>
+            8.2K/s
+          </Typography>
+          <Typography variant="caption" sx={{ color: themeColors.textSecondary }}>
+            최대: 12.5K/s
+          </Typography>
+        </Box>
+
+        <Box sx={{ backgroundColor: `${themeColors.cardBg}90`, borderRadius: '8px', padding: 2 }}>
+          <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
+            레이턴시
+          </Typography>
+          <Typography variant="h5" sx={{ color: themeColors.primary, fontWeight: 'bold' }}>
+            2.3ms
+          </Typography>
+          <Typography variant="caption" sx={{ color: themeColors.textSecondary }}>
+            P99: 5.1ms
+          </Typography>
+        </Box>
+
+        <Box sx={{ backgroundColor: `${themeColors.cardBg}90`, borderRadius: '8px', padding: 2 }}>
+          <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
+            컨슈머 랙
+          </Typography>
+          <Typography variant="h5" sx={{ color: themeColors.success, fontWeight: 'bold' }}>
+            0.05s
+          </Typography>
+          <Typography variant="caption" sx={{ color: themeColors.textSecondary }}>
+            복제 지연: 0ms
+          </Typography>
+        </Box>
+      </Box>
+    </NightCard>
+  );
+};
+
 export const EmergencyModeDisplay = ({ isEmergency }) => (
   <Box sx={{ 
     display: 'flex', 
@@ -437,3 +489,4 @@ export const DashboardFooter = () => (
     </Grid>
   </Box>
 ); 
+
