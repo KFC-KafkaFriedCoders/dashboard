@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Typography, Divider, Grid, Card } from '@mui/material';
 import { CompareArrows, NotificationsActive, ErrorOutline } from '@mui/icons-material';
 import { NightCard, themeColors, floatingEffect, pulse } from './NightThemeProvider';
+import axios from 'axios';
 
 // 에러 로그 아이템 컴포넌트
 export const ErrorLogItem = ({ log }) => (
@@ -165,29 +166,24 @@ export const ErrorLogsPanel = ({ isEmergency, clusterState }) => {
     </Card>
   );
 };
-
 // 토픽 데이터 스트림 컴포넌트
 export const TopicDataStreamPanel = ({ isEmergency }) => {
   const [topicData, setTopicData] = useState([]);
-  const [lastTimestamp, setLastTimestamp] = useState(Date.now());
 
   useEffect(() => {
-    // TODO: 실제 API를 사용하여 토픽 데이터를 가져오도록 수정
     const fetchTopicData = async () => {
       try {
-        // const response = await axios.get("http://localhost:9090/api/v1/query?query=kafka_server_brokertopicmetrics_messagesinpersec")
-        // console.log(response.data);
-        // 여기에 실제 API 호출 코드를 추가
-        // const response = await fetchTopicDataFromAPI();
-        // setTopicData(response);
-        setLastTimestamp(Date.now());
+        const response = await axios.get("http://localhost:9090/api/v1/query?query=kafka_server_brokertopicmetrics_messagesinpersec")
+        const metricsData = response.data.data.result
+        console.log("Fetched topic data:", metricsData);
+        setTopicData(metricsData);
       } catch (error) {
         console.error('토픽 데이터를 가져오는 중 오류 발생:', error);
       }
     };
-
-    const interval = setInterval(fetchTopicData, 1000);
-    return () => clearInterval(interval);
+    fetchTopicData();
+    setInterval(() => {fetchTopicData();}, 30000);
+    return () => clearInterval(fetchTopicData);
   }, []);
 
   return (
@@ -232,37 +228,29 @@ export const TopicDataStreamPanel = ({ isEmergency }) => {
           }
         }
       }}>
-        {topicData.length > 0 ? (
-          topicData.map((data, index) => (
+        {
+        topicData.length > 0 ? (
+          topicData.filter(data => data.metric.job === "kafka-broker")
+          .map((data, index) => (
             <Box key={index} sx={{ 
               p: 2, 
               borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
               '&:last-child': { borderBottom: 'none' }
             }}>
               <Grid container spacing={1}>
-                <Grid item xs={12}>
-                  <Typography variant="body2" sx={{ color: themeColors.textSecondary }}>
-                    {data.timestamp}
+                <Grid item xs={6}>
+                  <Typography variant="body2" sx={{ color: themeColors.text }}>
+                    Topic: {data.metric.topic}
                   </Typography>
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="body2" sx={{ color: themeColors.text }}>
-                    Topic: {data.topicName}
+                    hostname: {data.metric.hostname}
                   </Typography>
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="body2" sx={{ color: themeColors.text }}>
-                    Partition: {data.partition}
-                  </Typography>
-                </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="body2" sx={{ color: themeColors.text }}>
-                    Messages/s: {data.messagesPerSecond}
-                  </Typography>
-                </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="body2" sx={{ color: themeColors.text }}>
-                    Latency: {data.latency.toFixed(2)}ms
+                    Messagesbytes/s: {data.value[1]}
                   </Typography>
                 </Grid>
               </Grid>
