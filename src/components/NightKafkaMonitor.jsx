@@ -82,19 +82,6 @@ function NightSystemMonitor() {
     }
   };
 
-  useEffect(() => {
-    const getII = async () => {
-      try {
-        const response = await axios.get("http://localhost:9090/api/v1/query?query=kafka_server_brokertopicmetrics_messagesinpersec")
-        const metricsData = response.data.data.result
-        console.log(metricsData.length);
-      } catch (error) {
-        console.log(error)
-      }
-    }
-    getII();
-  })
-
   // 주기적인 데이터 갱신
   useEffect(() => {
     

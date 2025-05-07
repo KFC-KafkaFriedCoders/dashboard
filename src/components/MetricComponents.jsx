@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Typography, Divider, Grid, Card } from '@mui/material';
 import { CompareArrows, NotificationsActive, ErrorOutline } from '@mui/icons-material';
 import { NightCard, themeColors, floatingEffect, pulse } from './NightThemeProvider';
+import axios from 'axios';
 
 // 에러 로그 아이템 컴포넌트
 export const ErrorLogItem = ({ log }) => (
@@ -166,28 +167,24 @@ export const ErrorLogsPanel = ({ isEmergency, clusterState }) => {
   );
 };
 
-// 토픽 데이터 스트림 컴포넌트
 export const TopicDataStreamPanel = ({ isEmergency }) => {
+  
   const [topicData, setTopicData] = useState([]);
-  const [lastTimestamp, setLastTimestamp] = useState(Date.now());
+
 
   useEffect(() => {
-    // TODO: 실제 API를 사용하여 토픽 데이터를 가져오도록 수정
     const fetchTopicData = async () => {
       try {
-        // const response = await axios.get("http://localhost:9090/api/v1/query?query=kafka_server_brokertopicmetrics_messagesinpersec")
-        // console.log(response.data);
-        // 여기에 실제 API 호출 코드를 추가
-        // const response = await fetchTopicDataFromAPI();
-        // setTopicData(response);
-        setLastTimestamp(Date.now());
+        const response = await axios.get("http://localhost:9090/api/v1/query?query=kafka_server_brokertopicmetrics_messagesinpersec")
+        const metricsData = response.data.data.result
+        setTopicData(metricsData);
       } catch (error) {
         console.error('토픽 데이터를 가져오는 중 오류 발생:', error);
       }
     };
-
-    const interval = setInterval(fetchTopicData, 1000);
-    return () => clearInterval(interval);
+    fetchTopicData();
+    setInterval(() => {fetchTopicData();}, 30000);
+    return () => clearInterval(fetchTopicData);
   }, []);
 
   return (
@@ -232,37 +229,29 @@ export const TopicDataStreamPanel = ({ isEmergency }) => {
           }
         }
       }}>
-        {topicData.length > 0 ? (
-          topicData.map((data, index) => (
+        {
+        topicData.length > 0 ? (
+          topicData.filter(data => data.metric.job === "kafka-broker")
+          .map((data, index) => (
             <Box key={index} sx={{ 
               p: 2, 
               borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
               '&:last-child': { borderBottom: 'none' }
             }}>
               <Grid container spacing={1}>
-                <Grid item xs={12}>
-                  <Typography variant="body2" sx={{ color: themeColors.textSecondary }}>
-                    {data.timestamp}
+                <Grid item xs={6}>
+                  <Typography variant="body2" sx={{ color: themeColors.text }}>
+                    Topic: {data.metric.topic}
                   </Typography>
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="body2" sx={{ color: themeColors.text }}>
-                    Topic: {data.topicName}
+                    hostname: {data.metric.hostname}
                   </Typography>
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="body2" sx={{ color: themeColors.text }}>
-                    Partition: {data.partition}
-                  </Typography>
-                </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="body2" sx={{ color: themeColors.text }}>
-                    Messages/s: {data.messagesPerSecond}
-                  </Typography>
-                </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="body2" sx={{ color: themeColors.text }}>
-                    Latency: {data.latency.toFixed(2)}ms
+                    Messagesbytes/s: {data.value[1]}
                   </Typography>
                 </Grid>
               </Grid>
@@ -287,102 +276,132 @@ export const TopicDataStreamPanel = ({ isEmergency }) => {
   );
 };
 
-// 카프카 모니터링 컴포넌트
-export const KafkaMonitoringPanel = ({ isEmergency, hasErrors, hasWarnings, brokerActive }) => (
-  <NightCard isEmergency={isEmergency}>
-    <Box display="flex" alignItems="center" mb={2}>
-      <NotificationsActive className={hasErrors || !brokerActive ? 'emergency-icon' : ''} sx={{ 
-        color: hasErrors || !brokerActive ? themeColors.error : 
-               hasWarnings ? themeColors.warning : themeColors.primary,
-        mr: 1,
-        animation: hasErrors || !brokerActive ? 
-                  `${floatingEffect} 2s infinite ease-in-out` : 
-                  `${floatingEffect} 3s infinite ease-in-out`,
-        filter: hasErrors || !brokerActive ? 'drop-shadow(0 0 8px rgba(255, 82, 82, 0.6))' : 'none'
-      }} />
-      <Typography variant="h6" sx={{ 
-        fontWeight: '600', 
-        color: hasErrors || !brokerActive ? themeColors.error : themeColors.text
-      }}>
-        Kafka Monitoring
-      </Typography>
-    </Box>
-    <Divider sx={{ borderColor: isEmergency ? 'rgba(255, 82, 82, 0.2)' : 'rgba(255, 143, 171, 0.1)', mb: 2 }} />
-    <Box sx={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(2, 1fr)',
-      gap: 2,
-      height: '250px',
-      overflowY: 'auto'
-    }}>
-      <Box sx={{
-        backgroundColor: `${themeColors.cardBg}90`,
-        borderRadius: '8px',
-        padding: 2
-      }}>
-        <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
-          서비스 가용성
-        </Typography>
-        <Typography variant="h5" sx={{ color: themeColors.success, fontWeight: 'bold' }}>
-          99.999%
-        </Typography>
-        <Typography variant="caption" sx={{ color: themeColors.textSecondary }}>
-          무중단 서비스 시간: 143일
-        </Typography>
-      </Box>
-      
-      <Box sx={{
-        backgroundColor: `${themeColors.cardBg}90`,
-        borderRadius: '8px',
-        padding: 2
-      }}>
-        <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
-          처리량
-        </Typography>
-        <Typography variant="h5" sx={{ color: themeColors.warning, fontWeight: 'bold' }}>
-          8.2K/s
-        </Typography>
-        <Typography variant="caption" sx={{ color: themeColors.textSecondary }}>
-          최대: 12.5K/s
-        </Typography>
-      </Box>
-      
-      <Box sx={{
-        backgroundColor: `${themeColors.cardBg}90`,
-        borderRadius: '8px',
-        padding: 2
-      }}>
-        <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
-          레이턴시
-        </Typography>
-        <Typography variant="h5" sx={{ color: themeColors.primary, fontWeight: 'bold' }}>
-          2.3ms
-        </Typography>
-        <Typography variant="caption" sx={{ color: themeColors.textSecondary }}>
-          P99: 5.1ms
-        </Typography>
-      </Box>
-      
-      <Box sx={{
-        backgroundColor: `${themeColors.cardBg}90`,
-        borderRadius: '8px',
-        padding: 2
-      }}>
-        <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
-          컨슈머 랙
-        </Typography>
-        <Typography variant="h5" sx={{ color: themeColors.success, fontWeight: 'bold' }}>
-          0.05s
-        </Typography>
-        <Typography variant="caption" sx={{ color: themeColors.textSecondary }}>
-          복제 지연: 0ms
-        </Typography>
-      </Box>
-    </Box>
-  </NightCard>
-);
+export const KafkaMonitoringPanel = ({ isEmergency, hasErrors, hasWarnings, brokerActive }) => {
+  
+  const [partitionData, setPartitionData] = useState([]);
+  const [underReplicatedPartitions, setUnderReplicatedPartitions] = useState([]);
+  const [sum, setSum] = useState(0);
+  const [errorSum, setErrorSum] = useState(0);
 
-// 비상 모드 표시 컴포넌트
+  useEffect(() => {
+    const fetchTopicData = async () => {
+      try {
+        const response = await axios.get("http://localhost:9090/api/v1/query?query=kafka_server_replicamanager_partitioncount");
+        setPartitionData(response.data.data.result);
+      } catch (error) {
+        console.error('토픽 데이터를 가져오는 중 오류 발생:', error);
+      }
+    };
+
+    const fetchUnderReplicatedPartitions = async () => {
+      try {
+        const response = await axios.get("http://localhost:9090/api/v1/query?query=kafka_server_replicamanager_underreplicatedpartitions");
+        setUnderReplicatedPartitions(response.data.data.result);
+      } catch (error) {
+        console.error('Under-replicated 데이터를 가져오는 중 오류 발생:', error);
+      }
+    };
+    const fetchAllData = async () => {
+      await fetchTopicData();
+      await fetchUnderReplicatedPartitions();
+    };
+    fetchAllData();
+    const intervalId = setInterval(fetchAllData, 30000);
+    return () => clearInterval(intervalId);
+  }, []);
+  
+  const getAllPartition = () => {
+    setSum(0);
+    if(partitionData.length > 0){
+      for(let i = 0; i < partitionData.length; i++){
+        setSum(prevSum => prevSum + parseInt(partitionData[i].value[1]));
+      }
+    }
+  }
+
+  const getUnderReplicatedPartitions = () => {
+    setErrorSum(0);
+    if(underReplicatedPartitions.length > 0){
+      for(let i = 0; i < underReplicatedPartitions.length; i++){
+        setErrorSum(prevSum => prevSum + parseInt(underReplicatedPartitions[i].value[1]));
+      }
+    }
+  }
+
+  useEffect(() => {
+    getUnderReplicatedPartitions();
+    getAllPartition();
+  },[partitionData, underReplicatedPartitions]);
+
+  return (
+    <NightCard isEmergency={isEmergency}>
+      <Box display="flex" alignItems="center" mb={2}>
+        <NotificationsActive
+          className={hasErrors || !brokerActive ? 'emergency-icon' : ''}
+          sx={{
+            color: hasErrors || !brokerActive
+              ? themeColors.error
+              : hasWarnings
+              ? themeColors.warning
+              : themeColors.primary,
+            mr: 1,
+            animation: hasErrors || !brokerActive
+              ? `${floatingEffect} 2s infinite ease-in-out`
+              : `${floatingEffect} 3s infinite ease-in-out`,
+            filter: hasErrors || !brokerActive
+              ? 'drop-shadow(0 0 8px rgba(255, 82, 82, 0.6))'
+              : 'none'
+          }}
+        />
+        <Typography
+          variant="h6"
+          sx={{
+            fontWeight: '600',
+            color: hasErrors || !brokerActive ? themeColors.error : themeColors.text
+          }}
+        >
+          Kafka Monitoring
+        </Typography>
+      </Box>
+      <Divider
+        sx={{
+          borderColor: isEmergency
+            ? 'rgba(255, 82, 82, 0.2)'
+            : 'rgba(255, 143, 171, 0.1)',
+          mb: 2
+        }}
+      />
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: 2,
+          height: '250px',
+          overflowY: 'auto'
+        }}
+      >
+        <Box sx={{ backgroundColor: `${themeColors.cardBg}90`, borderRadius: '8px', padding: 2 }}>
+          <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
+            All Partitions
+          </Typography>
+          <Typography variant="h5" sx={{ color: themeColors.success, fontWeight: 'bold' }}>
+            {sum}
+          </Typography>
+        </Box>
+
+        <Box sx={{ backgroundColor: `${themeColors.cardBg}90`, borderRadius: '8px', padding: 2 }}>
+          <Typography variant="subtitle2" sx={{ color: themeColors.warning, mb: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>
+            Under Replicated Partitions
+          </Typography>
+          <Typography variant="h5" sx={{ color: themeColors.success, fontWeight: 'bold' }}>
+            {errorSum}
+          </Typography>
+        </Box>
+      </Box>
+    </NightCard>
+  );
+};
+
 export const EmergencyModeDisplay = ({ isEmergency }) => (
   <Box sx={{ 
     display: 'flex', 
@@ -449,3 +468,4 @@ export const DashboardFooter = () => (
     </Grid>
   </Box>
 ); 
+
