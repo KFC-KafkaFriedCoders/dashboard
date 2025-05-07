@@ -12,6 +12,9 @@ import {
   startSchema,
   shutDownSchema
 } from '../api/clusterApi';
+import axios from 'axios';
+
+const KAFKA_URL = 'http://localhost:8080';
 
 // 상태 변경 후 확인을 위한 대기 시간 (ms)
 const STATUS_CHECK_DELAY = 1000;
@@ -46,10 +49,38 @@ const waitForStatus = async (checkFn, id, expectedStatus, retries = 0) => {
 export const getClusterState = async () => {
   try {
     const [brokerStatuses, controllerStatuses, connectStatuses, schemaStatuses] = await Promise.all([
-      Promise.all([1, 2, 3].map(id => statusBroker(id))),
-      Promise.all([1, 2, 3].map(id => statusController(id))),
-      Promise.all([1, 2].map(id => statusConnect(id))),
-      Promise.all([1, 2].map(id => statusSchema(id)))
+      Promise.all([1, 2, 3].map(async (id) => {
+        try {
+          return await statusBroker(id);
+        } catch (error) {
+          console.error(`브로커 ${id} 상태 확인 중 오류:`, error);
+          return false;
+        }
+      })),
+      Promise.all([1, 2, 3].map(async (id) => {
+        try {
+          return await statusController(id);
+        } catch (error) {
+          console.error(`컨트롤러 ${id} 상태 확인 중 오류:`, error);
+          return false;
+        }
+      })),
+      Promise.all([1, 2].map(async (id) => {
+        try {
+          return await statusConnect(id);
+        } catch (error) {
+          console.error(`커넥터 ${id} 상태 확인 중 오류:`, error);
+          return false;
+        }
+      })),
+      Promise.all([1, 2].map(async (id) => {
+        try {
+          return await statusSchema(id);
+        } catch (error) {
+          console.error(`스키마 레지스트리 ${id} 상태 확인 중 오류:`, error);
+          return false;
+        }
+      }))
     ]);
 
     return {
@@ -87,10 +118,38 @@ export const getClusterState = async () => {
 export const getClusterAlerts = async () => {
   try {
     const [brokerStatuses, controllerStatuses, connectStatuses, schemaStatuses] = await Promise.all([
-      Promise.all([1, 2, 3].map(id => statusBroker(id))),
-      Promise.all([1, 2, 3].map(id => statusController(id))),
-      Promise.all([1, 2].map(id => statusConnect(id))),
-      Promise.all([1, 2].map(id => statusSchema(id)))
+      Promise.all([1, 2, 3].map(async (id) => {
+        try {
+          return await statusBroker(id);
+        } catch (error) {
+          console.error(`브로커 ${id} 상태 확인 중 오류:`, error);
+          return false;
+        }
+      })),
+      Promise.all([1, 2, 3].map(async (id) => {
+        try {
+          return await statusController(id);
+        } catch (error) {
+          console.error(`컨트롤러 ${id} 상태 확인 중 오류:`, error);
+          return false;
+        }
+      })),
+      Promise.all([1, 2].map(async (id) => {
+        try {
+          return await statusConnect(id);
+        } catch (error) {
+          console.error(`커넥터 ${id} 상태 확인 중 오류:`, error);
+          return false;
+        }
+      })),
+      Promise.all([1, 2].map(async (id) => {
+        try {
+          return await statusSchema(id);
+        } catch (error) {
+          console.error(`스키마 레지스트리 ${id} 상태 확인 중 오류:`, error);
+          return false;
+        }
+      }))
     ]);
 
     const alerts = [];
